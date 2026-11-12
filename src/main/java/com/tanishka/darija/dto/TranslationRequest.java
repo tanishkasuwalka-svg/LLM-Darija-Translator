@@ -1,4 +1,3 @@
-
 package com.tanishka.darija.dto;
 
 public class TranslationRequest {
