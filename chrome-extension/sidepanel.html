@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Multilingual Translator</title>
+
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body>
+
+<main class="app">
+
+    <!-- FIRST-TIME CONNECTION SCREEN -->
+    <section id="setupScreen" class="screen setup-screen">
+
+        <div class="welcome-icon">文</div>
+
+        <h1>Multilingual Translator</h1>
+
+        <p class="welcome-description">
+            Translate between languages with ease.
+        </p>
+
+        <div class="setup-card">
+
+            <h2>Welcome</h2>
+
+            <p class="section-description">
+                Connect to your translation service to get started.
+            </p>
+
+            <form id="connectionForm">
+
+                <label for="apiUsername">
+                    Username
+                </label>
+
+                <input
+                        type="text"
+                        id="apiUsername"
+                        placeholder="Enter your username"
+                        autocomplete="username"
+                        required
+                >
+
+                <label for="apiPassword">
+                    Password
+                </label>
+
+                <input
+                        type="password"
+                        id="apiPassword"
+                        placeholder="Enter your password"
+                        autocomplete="current-password"
+                        required
+                >
+
+                <button type="submit" id="connectButton">
+                    Connect
+                </button>
+
+            </form>
+
+            <p id="setupStatus" class="status-message"></p>
+
+            <p class="security-note">
+                Your credentials are stored for the current browser
+                session and are used to authenticate API requests.
+                They are checked when you first translate.
+            </p>
+
+        </div>
+
+    </section>
+
+
+    <!-- MAIN TRANSLATOR SCREEN -->
+    <section id="translatorScreen" class="screen translator-screen hidden">
+
+        <header class="app-header">
+
+            <div class="brand">
+
+                <div class="brand-icon">文</div>
+
+                <div>
+                    <h1>Multilingual Translator</h1>
+                    <p>English translation assistant</p>
+                </div>
+
+            </div>
+
+            <button
+                    type="button"
+                    id="settingsButton"
+                    class="icon-button"
+                    title="Settings"
+                    aria-label="Settings"
+            >
+                ⚙
+            </button>
+
+        </header>
+
+
+        <!-- TARGET LANGUAGE -->
+        <section class="language-section">
+
+            <label for="targetLanguage">
+                Translate into
+            </label>
+
+            <select id="targetLanguage">
+
+                <option value="DARIJA">
+                    🇲🇦 Moroccan Darija
+                </option>
+
+                <option value="HINDI">
+                    🇮🇳 Hindi
+                </option>
+
+            </select>
+
+        </section>
+
+
+        <!-- SOURCE TEXT -->
+        <section class="translation-card">
+
+            <div class="card-heading">
+
+                <h2>Source Text</h2>
+
+                <span class="language-tag">
+                        English
+                    </span>
+
+            </div>
+
+            <textarea
+                    id="sourceText"
+                    placeholder="Select text from any webpage or type here..."
+                    rows="6"
+            ></textarea>
+
+            <div class="source-footer">
+
+                    <span id="characterCount">
+                        0 characters
+                    </span>
+
+                <button
+                        type="button"
+                        id="clearButton"
+                        class="text-button"
+                >
+                    Clear
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- TRANSLATED RESULT -->
+        <section class="translation-card result-card">
+
+            <div class="card-heading">
+
+                <h2>Translation</h2>
+
+                <span id="resultLanguage" class="language-tag">
+                        Moroccan Darija
+                    </span>
+
+            </div>
+
+            <div
+                    id="translatedResult"
+                    class="translated-result"
+                    aria-live="polite"
+            >
+                <p class="placeholder">
+                    Your translation will appear here automatically.
+                </p>
+            </div>
+
+            <div class="result-footer">
+
+                    <span id="translationStatus">
+                        Ready to translate
+                    </span>
+
+                <button
+                        type="button"
+                        id="copyButton"
+                        class="text-button"
+                        disabled
+                >
+                    Copy
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <footer class="app-footer">
+            <span>Powered by Multilingual Translator API</span>
+        </footer>
+
+    </section>
+
+</main>
+
+<script src="sidepanel.js"></script>
+
+</body>
+</html>
