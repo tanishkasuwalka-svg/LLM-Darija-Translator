@@ -9,6 +9,9 @@
         <web-resource-collection>
             <web-resource-name>Translation API</web-resource-name>
             <url-pattern>/api/translate</url-pattern>
+
+            <!-- Allow OPTIONS preflight requests without authentication -->
+            <http-method-omission>OPTIONS</http-method-omission>
         </web-resource-collection>
 
         <auth-constraint>

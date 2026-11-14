@@ -1,94 +1,169 @@
 <?php
 declare(strict_types=1);
 
+session_start();
+
 $apiUrl = "http://localhost:8080/llm-darija-translator-1.0-SNAPSHOT/api/translate";
 
-$translation = "";
 $error = "";
+$translation = "";
 $sourceText = "";
 $targetLanguage = "DARIJA";
-$username = "";
 
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
+// Escape output before displaying it in HTML.
+function escapeHtml(string $value): string {
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
+}
 
-    $sourceText = trim($_POST["text"] ?? "");
-    $targetLanguage = strtoupper(trim($_POST["targetLanguage"] ?? "DARIJA"));
+// Send a request to the Java REST API using Basic Authentication.
+function callTranslationApi(
+    string $url,
+    string $username,
+    string $password,
+    string $text,
+    string $language
+): array {
+    $jsonData = json_encode(
+        ["text" => $text, "targetLanguage" => $language],
+        JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
+    );
+
+    $curl = curl_init($url);
+
+    curl_setopt_array($curl, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $jsonData,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => $username . ":" . $password,
+        CURLOPT_HTTPHEADER => [
+            "Content-Type: application/json",
+            "Accept: application/json"
+        ],
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 70
+    ]);
+
+    $response = curl_exec($curl);
+    $curlError = curl_error($curl);
+    $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+
+    curl_close($curl);
+
+    return [
+        "response" => $response,
+        "error" => $curlError,
+        "status" => $httpStatus
+    ];
+}
+
+// LOGOUT
+if ($_SERVER["REQUEST_METHOD"] === "POST"
+    && ($_POST["action"] ?? "") === "logout") {
+
+    $_SESSION = [];
+    session_destroy();
+
+    header("Location: " . $_SERVER["PHP_SELF"]);
+    exit;
+}
+
+// LOGIN
+if ($_SERVER["REQUEST_METHOD"] === "POST"
+    && ($_POST["action"] ?? "") === "login") {
+
     $username = trim($_POST["username"] ?? "");
     $password = $_POST["password"] ?? "";
+
+    if ($username === "" || $password === "") {
+        $error = "Please enter both your username and password.";
+    } elseif (!function_exists("curl_init")) {
+        $error = "PHP cURL extension is not enabled.";
+    } else {
+        try {
+            // Empty text is used to check authentication.
+            // The backend must reject empty text before calling Gemini.
+            $result = callTranslationApi(
+                $apiUrl,
+                $username,
+                $password,
+                "",
+                "DARIJA"
+            );
+
+            if ($result["response"] === false) {
+                $error = "Cannot connect to the translation server: "
+                    . $result["error"];
+            } elseif ($result["status"] === 401
+                || $result["status"] === 403) {
+                $error = "Invalid username or password.";
+            } elseif ($result["status"] === 400
+                || $result["status"] === 422) {
+
+                // Expected response when authentication succeeds
+                // but the backend rejects the intentionally empty text.
+                session_regenerate_id(true);
+
+                $_SESSION["api_username"] = $username;
+                $_SESSION["api_password"] = $password;
+
+                header("Location: " . $_SERVER["PHP_SELF"]);
+                exit;
+            } else {
+                $error = "Could not verify your login (HTTP "
+                    . $result["status"] . ").";
+            }
+
+        } catch (JsonException $exception) {
+            $error = "Could not prepare the login request.";
+        }
+    }
+}
+
+// TRANSLATION
+if ($_SERVER["REQUEST_METHOD"] === "POST"
+    && ($_POST["action"] ?? "") === "translate"
+    && isset($_SESSION["api_username"], $_SESSION["api_password"])) {
+
+    $sourceText = trim($_POST["text"] ?? "");
+    $targetLanguage = strtoupper(
+        trim($_POST["targetLanguage"] ?? "DARIJA")
+    );
 
     if ($sourceText === "") {
         $error = "Please enter text to translate.";
     } elseif (!in_array($targetLanguage, ["DARIJA", "HINDI"], true)) {
         $error = "Please select a valid target language.";
-    } elseif ($username === "" || $password === "") {
-        $error = "Please enter your API username and password.";
-    } elseif (!function_exists("curl_init")) {
-        $error = "PHP cURL extension is not enabled.";
     } else {
-
         try {
-            $requestData = [
-                "text" => $sourceText,
-                "targetLanguage" => $targetLanguage
-            ];
-
-            $jsonData = json_encode(
-                $requestData,
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
+            $result = callTranslationApi(
+                $apiUrl,
+                $_SESSION["api_username"],
+                $_SESSION["api_password"],
+                $sourceText,
+                $targetLanguage
             );
 
-            $curl = curl_init($apiUrl);
-
-            curl_setopt_array($curl, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => $jsonData,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
-                CURLOPT_USERPWD => $username . ":" . $password,
-                CURLOPT_HTTPHEADER => [
-                    "Content-Type: application/json",
-                    "Accept: application/json"
-                ],
-                CURLOPT_CONNECTTIMEOUT => 10,
-                CURLOPT_TIMEOUT => 70
-            ]);
-
-            $response = curl_exec($curl);
-            $curlError = curl_error($curl);
-            $httpStatus = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-
-            curl_close($curl);
-
-            if ($response === false) {
-                $error = "Network error: " . $curlError;
+            if ($result["response"] === false) {
+                $error = "Network error: " . $result["error"];
+            } elseif ($result["status"] === 401) {
+                $error = "Authentication expired. Please log in again.";
+                $_SESSION = [];
+                session_destroy();
+            } elseif ($result["status"] === 403) {
+                $error = "Access denied. Your account cannot use this API.";
+            } elseif ($result["status"] < 200
+                || $result["status"] >= 300) {
+                $error = "Translation API error (HTTP "
+                    . $result["status"] . ").";
             } else {
+                $responseData = json_decode($result["response"], true);
 
-                $responseData = json_decode($response, true);
-
-                if ($httpStatus === 401) {
-                    $error = "Authentication failed. Check your username and password.";
-                } elseif ($httpStatus === 403) {
-                    $error = "Access denied. Your account does not have permission to use this API.";
-                } elseif ($httpStatus < 200 || $httpStatus >= 300) {
-                    $error = "Translation API error (HTTP " . $httpStatus . ").";
-
-                    if (is_array($responseData)) {
-                        $errorDetail = $responseData["message"]
-                            ?? $responseData["error"]
-                            ?? null;
-
-                        if (is_string($errorDetail) && $errorDetail !== "") {
-                            $error .= " " . $errorDetail;
-                        }
-                    }
-                } elseif (!is_array($responseData)) {
-                    $error = "The API returned an invalid JSON response.";
-                } elseif (
-                    !isset($responseData["translatedText"]) ||
-                    !is_string($responseData["translatedText"]) ||
-                    trim($responseData["translatedText"]) === ""
-                ) {
-                    $error = "The API response does not contain a valid translation.";
+                if (!is_array($responseData)
+                    || !isset($responseData["translatedText"])
+                    || !is_string($responseData["translatedText"])
+                    || trim($responseData["translatedText"]) === "") {
+                    $error = "The API returned an invalid translation.";
                 } else {
                     $translation = $responseData["translatedText"];
                 }
@@ -100,9 +175,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 }
 
-function escapeHtml(string $value): string {
-    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
-}
+$isLoggedIn = isset(
+    $_SESSION["api_username"],
+    $_SESSION["api_password"]
+);
 ?>
 
 <!DOCTYPE html>
@@ -171,7 +247,7 @@ function escapeHtml(string $value): string {
             font: inherit;
             font-size: 14px;
             margin-bottom: 18px;
-            background: #fff;
+            background: white;
         }
 
         textarea {
@@ -199,6 +275,31 @@ function escapeHtml(string $value): string {
 
         .button:hover {
             background: #6245ad;
+        }
+
+        .logout-button {
+            width: auto;
+            padding: 9px 18px;
+            border: 1px solid #d8ccef;
+            border-radius: 8px;
+            background: white;
+            color: #7054bd;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            gap: 12px;
+        }
+
+        .logged-in {
+            color: #4d9270;
+            font-size: 13px;
+            font-weight: 600;
         }
 
         .result {
@@ -257,89 +358,135 @@ function escapeHtml(string $value): string {
         <p>Translate English into Moroccan Darija or Hindi.</p>
     </header>
 
-    <section class="card">
+    <?php if (!$isLoggedIn): ?>
 
-        <form method="POST" action="">
+        <!-- LOGIN SCREEN -->
+        <section class="card">
 
-            <label for="username">API Username</label>
-            <input
-                type="text"
-                id="username"
-                name="username"
-                value="<?= escapeHtml($username) ?>"
-                placeholder="Enter your API username"
-                autocomplete="username"
-                required
-            >
+            <h2>Welcome Back</h2>
+            <p>Log in with your API credentials to access the translator.</p>
 
-            <label for="password">API Password</label>
-            <input
-                type="password"
-                id="password"
-                name="password"
-                placeholder="Enter your API password"
-                autocomplete="current-password"
-                required
-            >
+            <?php if ($error !== ""): ?>
+                <div class="error">
+                    <?= escapeHtml($error) ?>
+                </div>
+            <?php endif; ?>
 
-            <label for="targetLanguage">Target Language</label>
+            <form method="POST">
 
-            <select id="targetLanguage" name="targetLanguage">
-                <option value="DARIJA"
-                    <?= $targetLanguage === "DARIJA" ? "selected" : "" ?>>
-                    Moroccan Darija
-                </option>
+                <input type="hidden" name="action" value="login">
 
-                <option value="HINDI"
-                    <?= $targetLanguage === "HINDI" ? "selected" : "" ?>>
-                    Hindi
-                </option>
-            </select>
+                <label for="username">API Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    placeholder="Enter your username"
+                    autocomplete="username"
+                    required
+                >
 
-            <label for="text">English Text</label>
+                <label for="password">API Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="Enter your password"
+                    autocomplete="current-password"
+                    required
+                >
 
-            <textarea
-                id="text"
-                name="text"
-                placeholder="Enter the English text you want to translate..."
-                required
-            ><?= escapeHtml($sourceText) ?></textarea>
+                <button type="submit" class="button">
+                    Log In
+                </button>
 
-            <button type="submit" class="button">
-                Translate
-            </button>
+            </form>
 
-        </form>
+        </section>
 
-    </section>
+    <?php else: ?>
 
-    <?php if ($error !== ""): ?>
-        <div class="error">
-            <?= escapeHtml($error) ?>
+        <!-- TRANSLATOR SCREEN -->
+        <div class="top-bar">
+            <span class="logged-in">✓ Logged in successfully</span>
+
+            <form method="POST">
+                <input type="hidden" name="action" value="logout">
+                <button type="submit" class="logout-button">
+                    Log Out
+                </button>
+            </form>
         </div>
-    <?php endif; ?>
 
-    <?php if ($translation !== ""): ?>
+        <?php if ($error !== ""): ?>
+            <div class="error">
+                <?= escapeHtml($error) ?>
+            </div>
+        <?php endif; ?>
 
         <section class="card">
 
-            <div class="success-label">
-                Translation completed successfully
-            </div>
+            <h2>Translate Text</h2>
+            <p>Enter your English text and choose a target language.</p>
 
-            <label>Translated Text</label>
+            <form method="POST">
 
-            <div class="result" id="translationResult" dir="auto"><?= escapeHtml($translation) ?></div>
+                <input type="hidden" name="action" value="translate">
 
-            <button
-                type="button"
-                class="copy-button"
-                onclick="copyTranslation()"
-            >
-                Copy Translation
-            </button>
+                <label for="targetLanguage">Target Language</label>
+
+                <select id="targetLanguage" name="targetLanguage">
+                    <option value="DARIJA"
+                        <?= $targetLanguage === "DARIJA" ? "selected" : "" ?>>
+                        Moroccan Darija
+                    </option>
+
+                    <option value="HINDI"
+                        <?= $targetLanguage === "HINDI" ? "selected" : "" ?>>
+                        Hindi
+                    </option>
+                </select>
+
+                <label for="text">English Text</label>
+
+                <textarea
+                    id="text"
+                    name="text"
+                    placeholder="Enter the English text you want to translate..."
+                    required
+                ><?= escapeHtml($sourceText) ?></textarea>
+
+                <button type="submit" class="button">
+                    Translate
+                </button>
+
+            </form>
 
         </section>
+
+        <?php if ($translation !== ""): ?>
+
+            <section class="card">
+
+                <div class="success-label">
+                    ✓ Translation completed successfully
+                </div>
+
+                <label>Translated Text</label>
+
+                <div class="result" id="translationResult" dir="auto"><?= escapeHtml($translation) ?></div>
+
+                <button
+                    type="button"
+                    class="copy-button"
+                    onclick="copyTranslation()"
+                >
+                    Copy Translation
+                </button>
+
+            </section>
+
+        <?php endif; ?>
 
     <?php endif; ?>
 
@@ -351,9 +498,11 @@ function escapeHtml(string $value): string {
 
 <script>
 function copyTranslation() {
-    const text = document.getElementById("translationResult").innerText;
+    const result = document.getElementById("translationResult");
 
-    navigator.clipboard.writeText(text)
+    if (!result) return;
+
+    navigator.clipboard.writeText(result.innerText)
         .then(() => alert("Translation copied!"))
         .catch(() => alert("Could not copy the translation."));
 }
