@@ -1,0 +1,97 @@
+@startuml
+title LLM-Powered Multilingual Translator - Deployment Diagram
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+
+node "Windows Development Laptop" as laptop {
+
+    node "Google Chrome Browser" as browser {
+        artifact "Chrome Extension\nManifest V3\nSide Panel" as extension
+
+        artifact "React Native Client\nExpo Snack Web Preview" as mobile
+    }
+
+    node "PHP Runtime\nPort 8000" as php {
+        artifact "PHP Web Application\nindex.php" as phpapp
+    }
+
+    node "Python Runtime" as python {
+        artifact "Python Terminal Client\ntranslator.py" as pythonapp
+    }
+
+    node "WildFly Application Server\nWildFly 41.0.1\nJava 21\nPort 8080" as wildfly {
+
+        artifact "Translator WAR\nllm-darija-translator-1.0-SNAPSHOT.war" as war
+
+        component "JAX-RS REST API\n/api/translate" as api
+
+        component "Basic Authentication\nJakarta Authentication" as auth
+
+        component "CORS Filter" as cors
+
+        component "TranslatorResource\nTranslatorService" as service
+
+        component "GeminiClient" as geminiClient
+    }
+}
+
+cloud "Cloudflare Network" as cloudflare {
+    component "Cloudflare Quick Tunnel\nTemporary HTTPS Endpoint" as tunnel
+}
+
+cloud "Google Cloud" as google {
+    component "Google Gemini API\nLLM Translation Service" as gemini
+}
+
+' Client application communication
+
+extension --> api : HTTP POST\nJSON + Basic Auth\nlocalhost:8080
+
+phpapp --> api : HTTP POST\nJSON + Basic Auth\nlocalhost:8080
+
+pythonapp --> api : HTTP POST\nJSON + Basic Auth\nlocalhost:8080
+
+' Expo Snack Web Preview communication
+
+mobile --> tunnel : HTTPS POST\nJSON + Basic Auth
+
+tunnel --> api : Secure tunnel forwarding\nto localhost:8080
+
+' Backend deployment and internal processing
+
+war *-- api
+war *-- auth
+war *-- cors
+war *-- service
+war *-- geminiClient
+
+api --> auth : Authenticate request
+api --> cors : CORS handling
+api --> service : Process translation
+
+service --> geminiClient : Generate translation prompt
+
+' External AI integration
+
+geminiClient --> gemini : HTTPS POST\nGemini generateContent
+
+note bottom of wildfly
+  Java RESTful service deployed
+  as a Maven WAR application.
+end note
+
+note bottom of cloudflare
+  Temporary tunnel used for
+  the Expo Snack Web preview.
+end note
+
+note bottom of google
+  Gemini generates the translated
+  text in Darija or Hindi.
+end note
+
+@enduml

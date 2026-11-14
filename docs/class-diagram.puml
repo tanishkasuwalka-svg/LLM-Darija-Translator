@@ -1,0 +1,120 @@
+@startuml
+title LLM-Powered Multilingual Translator - Class Diagram
+
+top to bottom direction
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 25
+skinparam ranksep 30
+
+package "Configuration" {
+    abstract class Application
+    class RestApplication {
+        +ApplicationPath("/api")
+    }
+    RestApplication --|> Application
+}
+
+package "REST Resource" {
+    class TranslatorResource {
+        -translatorService: TranslatorService
+        +translate(request: TranslationRequest): Response
+    }
+}
+
+package "DTO" {
+    class TranslationRequest {
+        -text: String
+        -targetLanguage: String = "DARIJA"
+        +getText(): String
+        +setText(text: String): void
+        +getTargetLanguage(): String
+        +setTargetLanguage(language: String): void
+    }
+
+    class TranslationResponse {
+        -sourceText: String
+        -translatedText: String
+        -sourceLanguage: String
+        -targetLanguage: String
+        +getSourceText(): String
+        +getTranslatedText(): String
+        +getSourceLanguage(): String
+        +getTargetLanguage(): String
+    }
+}
+
+package "Business Logic" {
+    class TranslatorService {
+        -geminiClient: GeminiClient
+        +translate(request: TranslationRequest): TranslationResponse
+        -buildPrompt(text: String, language: String): String
+        -getTargetLanguageName(language: String): String
+    }
+}
+
+package "Integration" {
+    class HttpClient
+    abstract class RuntimeException
+
+    class GeminiClient {
+        -httpClient: HttpClient
+        +generateContent(prompt: String): String
+        -extractGeneratedText(response: String): String
+        -handleApiError(statusCode: int): GeminiApiException
+        -getRequiredEnvironmentVariable(name: String): String
+    }
+
+    class GeminiApiException {
+        -statusCode: int
+        +getStatusCode(): int
+    }
+
+    GeminiApiException --|> RuntimeException
+    GeminiClient --> HttpClient : uses
+    GeminiClient ..> GeminiApiException : throws
+}
+
+package "Security" {
+    interface HttpAuthenticationMechanism
+    interface IdentityStore
+    class IdentityStoreHandler
+    class CredentialValidationResult
+
+    class CorsAwareBasicAuthenticationMechanism {
+        -identityStoreHandler: IdentityStoreHandler
+        +validateRequest(): AuthenticationStatus
+        +secureResponse(): AuthenticationStatus
+        +cleanSubject(): void
+    }
+
+    class EnvironmentIdentityStore {
+        +validate(credential: Credential): CredentialValidationResult
+    }
+
+    CorsAwareBasicAuthenticationMechanism ..|> HttpAuthenticationMechanism
+    CorsAwareBasicAuthenticationMechanism --> IdentityStoreHandler : injects
+    IdentityStoreHandler ..> IdentityStore : discovers
+    EnvironmentIdentityStore ..|> IdentityStore
+    EnvironmentIdentityStore ..> CredentialValidationResult : returns
+}
+
+package "Web Filter" {
+    interface Filter
+    class CorsFilter {
+        +doFilter(request, response, chain): void
+    }
+    CorsFilter ..|> Filter
+}
+
+' Main application relationships
+TranslatorResource --> TranslatorService : injects
+TranslatorResource ..> TranslationRequest : receives
+TranslatorResource ..> TranslationResponse : returns
+TranslatorResource ..> GeminiApiException : handles
+
+TranslatorService ..> TranslationRequest : uses
+TranslatorService ..> TranslationResponse : creates
+TranslatorService --> GeminiClient : injects
+@enduml

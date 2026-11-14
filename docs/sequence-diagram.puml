@@ -1,0 +1,64 @@
+@startuml
+title LLM-Powered Multilingual Translator - Sequence Diagram
+
+autonumber
+
+actor "Client Application\n(Chrome / PHP / Python / React Native)" as Client
+participant CorsFilter as CORS
+participant "CorsAwareBasicAuthenticationMechanism" as Auth
+participant IdentityStoreHandler as Handler
+participant EnvironmentIdentityStore as Store
+participant TranslatorResource as Resource
+participant TranslatorService as Service
+participant GeminiClient as Gemini
+participant "Google Gemini API" as API
+
+note over Client, API
+  Main translation workflow using HTTP Basic Authentication.
+end note
+
+opt Browser CORS preflight
+    Client -> CORS: OPTIONS /api/translate
+    CORS --> Client: 204 No Content\nCORS headers
+end
+
+Client -> CORS: POST /api/translate\nJSON + Basic Authorization
+CORS -> Auth: Continue request
+
+Auth -> Auth: Read and decode credentials
+Auth -> Handler: validate(credential)
+Handler -> Store: validate(credential)
+Store -> Store: Compare with environment variables
+Store --> Handler: CredentialValidationResult
+Handler --> Auth: Authentication result
+
+alt Valid credentials
+    Auth --> Resource: Authentication successful
+
+    Resource -> Service: translate(request)
+    Service -> Service: Validate text and language
+    Service -> Service: Build translation prompt
+
+    Service -> Gemini: generateContent(prompt)
+    Gemini -> API: HTTPS POST\nGemini generateContent
+
+    alt Gemini responds successfully
+        API --> Gemini: Generated translation
+        Gemini -> Gemini: Parse JSON response
+        Gemini --> Service: translatedText
+        Service -> Service: Create TranslationResponse
+        Service --> Resource: TranslationResponse
+        Resource --> Client: HTTP 200 OK\nJSON response
+
+    else Gemini service unavailable
+        API --> Gemini: HTTP error
+        Gemini --> Service: GeminiApiException
+        Service --> Resource: Translation exception
+        Resource --> Client: HTTP 502 Bad Gateway
+    end
+
+else Invalid credentials
+    Auth --> Client: HTTP 401 Unauthorized
+end
+
+@enduml
